@@ -27,66 +27,55 @@ if (!BOT_TOKEN) {
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// ─── Jadvallarni yaratish ──────────────────────────────────────────────────
 async function initDB() {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS users (
-      id SERIAL PRIMARY KEY,
-      telegram_id BIGINT NOT NULL UNIQUE,
-      username TEXT,
-      first_name TEXT,
-      last_name TEXT,
-      is_banned BOOLEAN NOT NULL DEFAULT false,
-      created_at TIMESTAMP NOT NULL DEFAULT now()
-    )
-  `);
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    telegram_id BIGINT NOT NULL UNIQUE,
+    username TEXT,
+    first_name TEXT,
+    last_name TEXT,
+    is_banned BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMP NOT NULL DEFAULT now()
+  )`);
 
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS movies (
-      id SERIAL PRIMARY KEY,
-      code TEXT NOT NULL UNIQUE,
-      file_id TEXT NOT NULL,
-      file_type TEXT NOT NULL DEFAULT 'video',
-      photo_file_id TEXT,
-      title TEXT NOT NULL,
-      year TEXT,
-      quality TEXT,
-      imdb TEXT,
-      country TEXT,
-      language TEXT,
-      genre TEXT,
-      caption TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT now()
-    )
-  `);
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS movies (
+    id SERIAL PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    file_id TEXT NOT NULL,
+    file_type TEXT NOT NULL DEFAULT 'video',
+    photo_file_id TEXT,
+    title TEXT NOT NULL,
+    year TEXT,
+    quality TEXT,
+    imdb TEXT,
+    country TEXT,
+    language TEXT,
+    genre TEXT,
+    caption TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT now()
+  )`);
 
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS requests (
-      id SERIAL PRIMARY KEY,
-      user_id BIGINT NOT NULL,
-      code TEXT NOT NULL,
-      success BOOLEAN NOT NULL DEFAULT false,
-      created_at TIMESTAMP NOT NULL DEFAULT now()
-    )
-  `);
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS requests (
+    id SERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    code TEXT NOT NULL,
+    success BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMP NOT NULL DEFAULT now()
+  )`);
 
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS admin_sessions (
-      id SERIAL PRIMARY KEY,
-      admin_id BIGINT NOT NULL UNIQUE,
-      step TEXT NOT NULL DEFAULT 'idle',
-      data TEXT NOT NULL DEFAULT '{}',
-      updated_at TIMESTAMP NOT NULL DEFAULT now()
-    )
-  `);
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS admin_sessions (
+    id SERIAL PRIMARY KEY,
+    admin_id BIGINT NOT NULL UNIQUE,
+    step TEXT NOT NULL DEFAULT 'idle',
+    data TEXT NOT NULL DEFAULT '{}',
+    updated_at TIMESTAMP NOT NULL DEFAULT now()
+  )`);
 
-  console.log("✅ Database jadvallar tayyor");
+  console.log("✅ Database tayyor");
 }
 
-// ─── Foydalanuvchi buyruqlari ──────────────────────────────────────────────
 bot.command("start", (ctx) => handleStart(ctx));
 
-// ─── Admin buyruqlari ──────────────────────────────────────────────────────
 bot.command("help", async (ctx) => {
   const channelId = process.env.CHANNEL_ID || "@mutfilmUZcode";
   const channelUsername = channelId.startsWith("@") ? channelId.slice(1) : channelId;
@@ -95,8 +84,7 @@ bot.command("help", async (ctx) => {
     `1️⃣ @${channelUsername} kanalidan multfilm postini toping\n` +
     `2️⃣ Postdagi <b>raqamli kodni</b> nusxalang\n` +
     `3️⃣ Kodni botga yuboring\n` +
-    `4️⃣ Video avtomatik keladi ✅\n\n` +
-    `❓ Muammo bo'lsa — kodni to'g'ri nusxalagansiz?`
+    `4️⃣ Video avtomatik keladi ✅`
   );
 });
 
@@ -109,7 +97,6 @@ bot.command("ban", (ctx) => handleBan(ctx));
 bot.command("unban", (ctx) => handleUnban(ctx));
 bot.command("delete", (ctx) => handleDelete(ctx));
 
-// ─── Admin panel ──────────────────────────────────────────────────────────
 bot.command("admin", async (ctx) => {
   if (!isAdmin(ctx.from!.id)) {
     await ctx.reply("❌ Siz admin emassiz!");
@@ -126,26 +113,18 @@ bot.command("admin", async (ctx) => {
   );
 });
 
-// ─── Callback query (sifat, audio tugmalar) ───────────────────────────────
 bot.on("callback_query", async (ctx) => {
   const handled = await handleAdminCallback(ctx);
-  if (!handled) {
-    await ctx.answerCbQuery("❌ Noma'lum amal");
-  }
+  if (!handled) await ctx.answerCbQuery("❌ Noma'lum amal");
 });
 
-// ─── Barcha xabarlar ──────────────────────────────────────────────────────
 bot.on("message", async (ctx) => {
   const msg = ctx.message as any;
-
-  // Admin upload jarayoni
   const adminHandled = await handleAdminMessage(ctx);
   if (adminHandled) return;
 
-  // Matn xabarlari — kod tekshirish
   if (msg.text && !msg.text.startsWith("/")) {
     const text = msg.text.trim();
-    // Kod formatlarini qabul qilish: 049, #049, KOD049
     if (/^#?\d{1,6}$/.test(text) || /^[A-Z]{0,5}\d{1,6}$/i.test(text)) {
       await handleMovieCode(ctx, text);
     } else {
@@ -158,19 +137,16 @@ bot.on("message", async (ctx) => {
   }
 });
 
-// ─── Xatolarni ushlash ────────────────────────────────────────────────────
 bot.catch((err, ctx) => {
   console.error(`Xato [${ctx.updateType}]:`, err);
 });
 
-// ─── Ishga tushirish ──────────────────────────────────────────────────────
 (async () => {
   try {
     await initDB();
     await bot.launch();
     const botInfo = await bot.telegram.getMe();
     console.log(`🤖 Bot ishga tushdi: @${botInfo.username}`);
-
     process.once("SIGINT", () => bot.stop("SIGINT"));
     process.once("SIGTERM", () => bot.stop("SIGTERM"));
   } catch (err) {
