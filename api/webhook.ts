@@ -1,8 +1,5 @@
-import * as dotenv from "dotenv";
-dotenv.config();
-
 import { Telegraf } from "telegraf";
-import { client } from "../src/db";
+import { db, client } from "../src/db";
 import { handleStart } from "../src/handlers/start";
 import { handleMovieCode } from "../src/handlers/movie";
 import {
@@ -22,32 +19,57 @@ import {
 const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) throw new Error("BOT_TOKEN is not set!");
 
-let dbReady = false;
-
-async function ensureDB() {
-  if (dbReady) return;
-  await client`SELECT 1`;
-  await client.unsafe(`CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY, telegram_id BIGINT NOT NULL UNIQUE,
-    username TEXT, first_name TEXT, last_name TEXT,
-    is_banned BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMP NOT NULL DEFAULT now())`);
-  await client.unsafe(`CREATE TABLE IF NOT EXISTS movies (
-    id SERIAL PRIMARY KEY, code TEXT NOT NULL UNIQUE,
-    file_id TEXT NOT NULL, file_type TEXT NOT NULL DEFAULT 'video',
-    photo_file_id TEXT, title TEXT NOT NULL, year TEXT, quality TEXT,
-    imdb TEXT, country TEXT, language TEXT, genre TEXT, caption TEXT,
-    created_at TIMESTAMP NOT NULL DEFAULT now())`);
-  await client.unsafe(`CREATE TABLE IF NOT EXISTS requests (
-    id SERIAL PRIMARY KEY, user_id BIGINT NOT NULL, code TEXT NOT NULL,
-    success BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMP NOT NULL DEFAULT now())`);
-  await client.unsafe(`CREATE TABLE IF NOT EXISTS admin_sessions (
-    id SERIAL PRIMARY KEY, admin_id BIGINT NOT NULL UNIQUE,
-    step TEXT NOT NULL DEFAULT 'idle', data TEXT NOT NULL DEFAULT '{}',
-    updated_at TIMESTAMP NOT NULL DEFAULT now())`);
-  dbReady = true;
-}
+// DB jadvallarni bir marta yaratish (module darajasida)
+let dbInitDone = false;
+const dbInitPromise: Promise<void> = (async () => {
+  try {
+    await client`SELECT 1`;
+    await client.unsafe(`CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      telegram_id BIGINT NOT NULL UNIQUE,
+      username TEXT,
+      first_name TEXT,
+      last_name TEXT,
+      is_banned BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMP NOT NULL DEFAULT now()
+    )`);
+    await client.unsafe(`CREATE TABLE IF NOT EXISTS movies (
+      id SERIAL PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      file_id TEXT NOT NULL,
+      file_type TEXT NOT NULL DEFAULT 'video',
+      photo_file_id TEXT,
+      title TEXT NOT NULL,
+      year TEXT,
+      quality TEXT,
+      imdb TEXT,
+      country TEXT,
+      language TEXT,
+      genre TEXT,
+      caption TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT now()
+    )`);
+    await client.unsafe(`CREATE TABLE IF NOT EXISTS requests (
+      id SERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL,
+      code TEXT NOT NULL,
+      success BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMP NOT NULL DEFAULT now()
+    )`);
+    await client.unsafe(`CREATE TABLE IF NOT EXISTS admin_sessions (
+      id SERIAL PRIMARY KEY,
+      admin_id BIGINT NOT NULL UNIQUE,
+      step TEXT NOT NULL DEFAULT 'idle',
+      data TEXT NOT NULL DEFAULT '{}',
+      updated_at TIMESTAMP NOT NULL DEFAULT now()
+    )`);
+    dbInitDone = true;
+    console.log("✅ DB jadvallar tayyor");
+  } catch (err) {
+    console.error("❌ DB init xato:", err);
+    // Bot shunga qaramay ishlashda davom etadi
+  }
+})();
 
 const bot = new Telegraf(BOT_TOKEN);
 
@@ -99,21 +121,34 @@ bot.on("message", async (ctx) => {
   }
 });
 
+// Xatolarni tutish va foydalanuvchiga xabar berish
 bot.catch((err, ctx) => {
-  console.error(`Bot xato [${ctx.updateType}]:`, err);
+  console.error(`❌ Bot xato [${ctx.updateType}]:`, err);
+  ctx.reply("⚠️ Xato yuz berdi. Qayta urinib ko'ring yoki @mutfilmUZcode ga murojaat qiling.")
+    .catch((e) => console.error("Reply yuborishda xato:", e));
 });
 
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") {
-    res.status(200).json({ ok: true, message: "Mutfilm Bot is running!" });
+    res.status(200).json({
+      ok: true,
+      message: "Mutfilm Bot is running!",
+      dbReady: dbInitDone,
+    });
     return;
   }
+
+  // DB tayyor bo'lishini kutamiz (max 5 sekund)
+  await Promise.race([
+    dbInitPromise,
+    new Promise((resolve) => setTimeout(resolve, 5000)),
+  ]).catch(() => {});
+
   try {
-    await ensureDB();
     await bot.handleUpdate(req.body);
-    res.status(200).json({ ok: true });
   } catch (err) {
-    console.error("Webhook xato:", err);
-    res.status(200).json({ ok: true });
+    console.error("❌ handleUpdate xato:", err);
   }
+
+  res.status(200).json({ ok: true });
 }
