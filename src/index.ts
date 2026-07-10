@@ -20,9 +20,26 @@ import {
 } from "./handlers/admin";
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-if (!BOT_TOKEN) throw new Error("BOT_TOKEN kerak");
+if (!BOT_TOKEN) throw new Error("BOT_TOKEN environment variable is not set!");
 
-async function initDB() {
+console.log("🟡 BOT_TOKEN:", BOT_TOKEN.substring(0, 10) + "...");
+
+async function initDB(retries = 5): Promise<void> {
+  for (let i = 1; i <= retries; i++) {
+    try {
+      console.log(`🔄 DB ulanish urinish ${i}/${retries}...`);
+      await client`SELECT 1`;
+      console.log("✅ DB ulandi!");
+      break;
+    } catch (err: any) {
+      console.error(`❌ DB ulanmadi (${i}/${retries}):`, err.message);
+      if (i === retries) throw err;
+      const wait = i * 2000;
+      console.log(`⏳ ${wait / 1000}s kutilmoqda...`);
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+
   await client.unsafe(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
@@ -70,7 +87,7 @@ async function initDB() {
       updated_at TIMESTAMP NOT NULL DEFAULT now()
     )
   `);
-  console.log("✅ DB tayyor");
+  console.log("✅ Jadvallar tayyor");
 }
 
 const bot = new Telegraf(BOT_TOKEN);
@@ -124,21 +141,19 @@ bot.on("message", async (ctx) => {
 });
 
 bot.catch((err, ctx) => {
-  console.error(`Xato [${ctx.updateType}]:`, err);
+  console.error(`Bot xato [${ctx.updateType}]:`, err);
 });
 
 (async () => {
   try {
-    console.log("🔄 DB ulanmoqda...");
     await initDB();
-    console.log("🤖 Bot ishga tushmoqda...");
     await bot.launch();
     const me = await bot.telegram.getMe();
-    console.log(`✅ Bot: @${me.username}`);
-    process.once("SIGINT",  () => bot.stop("SIGINT"));
-    process.once("SIGTERM", () => bot.stop("SIGTERM"));
+    console.log(`🚀 Bot ishga tushdi: @${me.username}`);
+    process.once("SIGINT",  () => { bot.stop("SIGINT");  process.exit(0); });
+    process.once("SIGTERM", () => { bot.stop("SIGTERM"); process.exit(0); });
   } catch (err) {
-    console.error("❌ Xato:", err);
+    console.error("❌ Ishga tushmadi:", err);
     process.exit(1);
   }
 })();
