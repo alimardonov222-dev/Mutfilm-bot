@@ -19,8 +19,12 @@ import {
 const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) throw new Error("BOT_TOKEN is not set!");
 
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || "";
+
 // DB jadvallarni bir marta yaratish (module darajasida)
-let dbInitDone = false;
+let dbReady = false;
+let dbError: Error | null = null;
+
 const dbInitPromise: Promise<void> = (async () => {
   try {
     await client`SELECT 1`;
@@ -63,11 +67,11 @@ const dbInitPromise: Promise<void> = (async () => {
       data TEXT NOT NULL DEFAULT '{}',
       updated_at TIMESTAMP NOT NULL DEFAULT now()
     )`);
-    dbInitDone = true;
+    dbReady = true;
     console.log("✅ DB jadvallar tayyor");
   } catch (err) {
+    dbError = err as Error;
     console.error("❌ DB init xato:", err);
-    // Bot shunga qaramay ishlashda davom etadi
   }
 })();
 
@@ -124,26 +128,51 @@ bot.on("message", async (ctx) => {
 // Xatolarni tutish va foydalanuvchiga xabar berish
 bot.catch((err, ctx) => {
   console.error(`❌ Bot xato [${ctx.updateType}]:`, err);
-  ctx.reply("⚠️ Xato yuz berdi. Qayta urinib ko'ring yoki @mutfilmUZcode ga murojaat qiling.")
-    .catch((e) => console.error("Reply yuborishda xato:", e));
+  const chat = (ctx as any).chat || (ctx as any).message?.chat;
+  if (chat?.id) {
+    ctx.reply("⚠️ Xato yuz berdi. Qayta urinib ko'ring.")
+      .catch((e) => console.error("Reply yuborishda xato:", e));
+  }
 });
 
 export default async function handler(req: any, res: any) {
+  // GET: holat tekshirish
   if (req.method !== "POST") {
     res.status(200).json({
       ok: true,
       message: "Mutfilm Bot is running!",
-      dbReady: dbInitDone,
+      dbReady,
+      dbError: dbError?.message || null,
     });
     return;
   }
 
-  // DB tayyor bo'lishini kutamiz (max 5 sekund)
-  await Promise.race([
-    dbInitPromise,
-    new Promise((resolve) => setTimeout(resolve, 5000)),
-  ]).catch(() => {});
+  // 1. Webhook secret tekshirish (Telegram autentifikatsiyasi)
+  if (WEBHOOK_SECRET) {
+    const incoming = req.headers["x-telegram-bot-api-secret-token"];
+    if (incoming !== WEBHOOK_SECRET) {
+      console.warn("❌ Noto'g'ri webhook secret:", incoming);
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+  }
 
+  // 2. DB tayyor bo'lishini kutamiz (max 8 sekund)
+  if (!dbReady) {
+    await Promise.race([
+      dbInitPromise,
+      new Promise((resolve) => setTimeout(resolve, 8000)),
+    ]);
+  }
+
+  // 3. DB tayyor bo'lmasa — log va o'tkazib yuboramiz
+  if (!dbReady) {
+    console.error("❌ DB tayyor emas, update o'tkazib yuborildi. Xato:", dbError?.message);
+    res.status(200).json({ ok: true }); // Telegram qayta urinmasligi uchun 200
+    return;
+  }
+
+  // 4. Bot update ni qayta ishlash
   try {
     await bot.handleUpdate(req.body);
   } catch (err) {
