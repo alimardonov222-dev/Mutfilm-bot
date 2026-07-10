@@ -1,8 +1,21 @@
 {
   "version": 2,
-  "functions": {
-    "api/webhook.ts": {
-      "maxDuration": 30
+  "buildCommand": "",
+  "outputDirectory": ".",
+  "builds": [
+    {
+      "src": "api/webhook.ts",
+      "use": "@vercel/node"
     }
-  }
+  ],
+  "routes": [
+    {
+      "src": "/api/webhook",
+      "dest": "/api/webhook.ts"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/api/webhook.ts"
+    }
+  ]
 }
