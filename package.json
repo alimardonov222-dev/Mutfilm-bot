@@ -1,0 +1,25 @@
+{
+  "name": "magic-mult-bot",
+  "version": "1.0.0",
+  "description": "Telegram Multfilm Bot - Railway Deploy",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "telegraf": "^4.16.3",
+    "drizzle-orm": "^0.39.3",
+    "postgres": "^3.4.5",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "drizzle-kit": "^0.30.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}
